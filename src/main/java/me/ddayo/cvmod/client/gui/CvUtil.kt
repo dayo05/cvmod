@@ -8,5 +8,6 @@ object CvUtil {
     external fun getImageHeight(): Int
     external fun getImageChannels(): Int
     external fun getBmpImage(): Long
-    external fun getImageByteBuffer(): ByteBuffer
+    external fun loadVideo(name: String): Long
+    external fun nextFrame(): Long
 }

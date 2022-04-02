@@ -1,6 +1,7 @@
 package me.ddayo.cvmod
 
 import com.mojang.blaze3d.matrix.MatrixStack
+import com.mojang.blaze3d.platform.GlStateManager
 import com.mojang.blaze3d.systems.RenderSystem
 import io.netty.buffer.ByteBufInputStream
 import me.ddayo.cvmod.client.gui.CvUtil
@@ -31,8 +32,8 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.nio.ByteOrder
-import java.util.function.Consumer
 import java.util.function.Predicate
+import org.lwjgl.opengl.GL21.*
 
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod(Cvmod.MOD_ID)
@@ -42,68 +43,17 @@ class Cvmod {
         private val logger = LogManager.getLogger()
 
         init {
+            System.loadLibrary("opencv_videoio_ffmpeg455_64")
             System.loadLibrary("opencv_world455")
             System.loadLibrary("cvmod")
         }
     }
-
     init {
-        val manager = Minecraft.getInstance().resourceManager as SimpleReloadableResourceManager
-        manager.addResourcePack(object : IResourcePack {
-            override fun close() {}
-
-            override fun getRootResourceStream(fileName: String): InputStream {
-                logger.info("RRS")
-                val arr = ByteArray(CvUtil.getImageChannels() * CvUtil.getImageHeight() * CvUtil.getImageWidth())
-                CvUtil.getImageByteBuffer().get(arr)
-                return ByteArrayInputStream(arr)
-            }
-
-            override fun getResourceStream(type: ResourcePackType, location: ResourceLocation): InputStream {
-                logger.info("RS")
-                val arr = ByteArray(CvUtil.getImageChannels() * CvUtil.getImageHeight() * CvUtil.getImageWidth())
-                CvUtil.getImageByteBuffer().order(ByteOrder.nativeOrder()).get(arr)
-                return ByteArrayInputStream(arr)
-            }
-
-            override fun getAllResourceLocations(type: ResourcePackType, namespaceIn: String, pathIn: String, maxDepthIn: Int, filterIn: Predicate<String>): MutableCollection<ResourceLocation> {
-                logger.info("all location")
-                return listOf(ResourceLocation("asdf", "asdf")).toMutableList()
-            }
-
-            override fun resourceExists(type: ResourcePackType, location: ResourceLocation): Boolean {
-                logger.info("exists")
-                return true
-            }
-
-            override fun getResourceNamespaces(type: ResourcePackType): MutableSet<String> {
-                logger.info("namespace")
-                return setOf("asdf").toMutableSet()
-            }
-
-            override fun <T : Any?> getMetadata(deserializer: IMetadataSectionSerializer<T>): T? {
-                logger.info("metadata")
-                return null
-            }
-
-            override fun getName(): String {
-                return "asdf"
-            }
-        })
-        manager.addResourcePack(object: FolderPack(File(Minecraft.getInstance().gameDir, "assets")) {
-
-            override fun getAllResourceLocations(type: ResourcePackType, namespaceIn: String, pathIn: String, maxDepthIn: Int, filterIn: Predicate<String>): MutableCollection<ResourceLocation> {
-                val x =  super.getAllResourceLocations(type, namespaceIn, pathIn, maxDepthIn, filterIn)
-                for(k in x)
-                    logger.info("${k.namespace} ${k.path}")
-                return x
-            }
-        })
-
         FMLJavaModLoadingContext.get().modEventBus.register(object {
             @SubscribeEvent
             fun setup(event: FMLCommonSetupEvent) {
-                logger.info(CvUtil.loadImage("assets/sans.png"))
+                //logger.info(CvUtil.loadImage("assets/sans.png"))
+                logger.info(CvUtil.loadVideo("assets/sans.mp4"))
             }
 
             @SubscribeEvent
@@ -115,36 +65,53 @@ class Cvmod {
         })
 
         MinecraftForge.EVENT_BUS.register(object {
-            val nctor = NativeImage::class.java.getDeclaredConstructor(NativeImage.PixelFormat::class.java, Int::class.java, Int::class.java, Boolean::class.java, Long::class.java)
-            init {
-                nctor.isAccessible = true
-            }
+            var tex = -1
 
             @SubscribeEvent
             fun asdf(event: GuiScreenEvent.DrawScreenEvent.Post) {
                 val width = event.gui.width
                 val height = event.gui.height
 
-                //logger.info(Minecraft.getInstance().textureManager.getTexture(ResourceLocation("assets", "sans.png"))!!.glTextureId)
-                Minecraft.getInstance().textureManager.bindTexture(ResourceLocation("asdf", "asdf"))
-                logger.info(Minecraft.getInstance().textureManager.getTexture(ResourceLocation("asdf", "asdf"))!!.glTextureId)
-                //Minecraft.getInstance().textureManager.bindTexture(ResourceLocation("assets", "sans.png"))
-                GL11.glPushMatrix()
-                run {
-                    GL11.glEnable(GL11.GL_TEXTURE_2D)
-                    GL11.glEnable(GL11.GL_BLEND)
-                    GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-
-                    GL11.glTexCoord2d(1.0, 0.0)
-                    GL11.glVertex2i(width, 0)
-                    GL11.glTexCoord2d(0.0, 0.0)
-                    GL11.glVertex2i(0, 0)
-                    GL11.glTexCoord2d(0.0, 1.0)
-                    GL11.glVertex2i(0, height)
-                    GL11.glTexCoord2d(1.0, 1.0)
-                    GL11.glVertex2i(width, height)
+                if(tex == -1) {
+                    tex = glGenTextures()
+                    logger.info(tex)
+                    glBindTexture(GL_TEXTURE_2D, tex)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, CvUtil.getImageWidth(), CvUtil.getImageHeight(), 0, GL_RGBA, GL_UNSIGNED_BYTE, CvUtil.getBmpImage())
+                    glBindTexture(GL_TEXTURE_2D, 0)
                 }
-                GL11.glPopMatrix()
+                else {
+                    glPushMatrix()
+                    run {
+                        glLoadIdentity()
+                        glTranslated(0.0, 0.0, -2000.0)
+
+                        glBindTexture(GL_TEXTURE_2D, tex)
+                        //glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, CvUtil.getImageWidth(), CvUtil.getImageHeight(), GL_RGBA, GL_UNSIGNED_BYTE, CvUtil.getBmpImage())
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, CvUtil.getImageWidth(), CvUtil.getImageHeight(), GL_RGBA, GL_UNSIGNED_BYTE, CvUtil.nextFrame())
+                        glBegin(GL_QUADS)
+
+                        glTexCoord2d(1.0, 0.0)
+                        glVertex2i(width, 0)
+                        glTexCoord2d(0.0, 0.0)
+                        glVertex2i(0, 0)
+                        glTexCoord2d(0.0, 1.0)
+                        glVertex2i(0, height)
+                        glTexCoord2d(1.0, 1.0)
+                        glVertex2i(width, height)
+                        glEnd()
+                    }
+                    glBindTexture(GL_TEXTURE_2D, 0)
+                    glEnable(GL_DEPTH_TEST)
+                    glPopMatrix()
+                }
+                //logger.info(Minecraft.getInstance().textureManager.getTexture(ResourceLocation("assets", "sans.png"))!!.glTextureId)
+                //Minecraft.getInstance().textureManager.bindTexture(ResourceLocation("asdf", "asdf"))
+                //logger.info(Minecraft.getInstance().textureManager.getTexture(ResourceLocation("asdf", "asdf"))!!.glTextureId)
+                //Minecraft.getInstance().textureManager.bindTexture(ResourceLocation("assets", "sans.png"))
             }
 
             @SubscribeEvent
